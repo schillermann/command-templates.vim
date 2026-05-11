@@ -40,45 +40,67 @@ def FilterMenu(id: number, key: string): bool
     var win_cfg = popup_getoptions(id)
     var current_filter = substitute(win_cfg.title, '^ Filter: \(.*\) $', '\1', '')
 
+    var handled = false
     if key == "\<BS>"
         var filter_len = strlen(current_filter)
         current_filter = (filter_len > 0) ? slice(current_filter, 0, filter_len - 1) : ""
+        handled = true
     elseif key == "\<C-u>"
         current_filter = ""
+        handled = true
     elseif key =~ '^\p$'
         current_filter ..= key
+        handled = true
     else
-        return popup_filter_menu(id, key)
+        handled = popup_filter_menu(id, key)
     endif
 
-    var fuzzy = substitute(current_filter, ' ', '.*', 'g')
+    if handled && key =~ '^\p$\|\<BS\>\|\<C-u\>'
+        var fuzzy = substitute(current_filter, ' ', '.*', 'g')
+        filtered_items = []
+        for item in current_command_list
+            if item[0] =~? fuzzy || item[1] =~? fuzzy
+                add(filtered_items, item)
+            endif
+        endfor
 
-    filtered_items = []
-    for item in current_command_list
-        if item[0] =~? fuzzy || item[1] =~? fuzzy
-            add(filtered_items, item)
-        endif
-    endfor
+        var display = mapnew(filtered_items, FormatLine)
+        popup_settext(id, display)
+        popup_setoptions(id, {title: $" Filter: {current_filter} "})
+    endif
 
-    var display = mapnew(filtered_items, FormatLine)
-
-    popup_settext(id, display)
-    popup_setoptions(id, {title: $" Filter: {current_filter} "})
     return true
 enddef
 
-export def Open(command_list: list<any>)
+export def Open(command_list: list<any>, opts: dict<any> = {})
     current_command_list = command_list
     filtered_items = copy(current_command_list)
     var options = mapnew(filtered_items, FormatLine)
 
-    popup_menu(options, {
+    var popup_opts: dict<any> = {
         callback: CommandSelected,
         filter: FilterMenu,
-        title: ' Filter:  ',
+        title: has_key(opts, 'title') ? $" {opts['title']} " : ' Filter:  ',
         border: [1, 1, 1, 1],
         padding: [0, 1, 0, 1],
         cursorline: true,
         minwidth: 60,
-    })
+        highlight: get(opts, 'highlight', 'Normal'),
+        borderhighlight: get(opts, 'borderhighlight', ['Normal']),
+    }
+
+    var bstyle = get(opts, 'borderstyle', 'rounded')
+    if bstyle == 'double'
+        popup_opts['borderchars'] = ['═', '║', '═', '║', '╔', '╗', '╝', '╚']
+    elseif bstyle == 'thick'
+        popup_opts['borderchars'] = ['━', '┃', '━', '┃', '┏', '┓', '┛', '┗']
+    elseif bstyle == 'rounded'
+        popup_opts['borderchars'] = ['─', '│', '─', '│', '╭', '╮', '╯', '╰']
+    elseif bstyle == 'ascii'
+        popup_opts['borderchars'] = ['-', '|', '-', '|', '+', '+', '+', '+']
+    elseif bstyle == 'single'
+        popup_opts['borderchars'] = ['─', '│', '─', '│', '┌', '┐', '┘', '└']
+    endif
+
+    popup_menu(options, popup_opts)
 enddef
